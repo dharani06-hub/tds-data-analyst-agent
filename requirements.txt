@@ -1,2 +1,10 @@
 fastapi
 uvicorn
+openai
+requests
+beautifulsoup4
+PyMuPDF
+pytesseract
+Pillow
+python-multipart
+whisper
