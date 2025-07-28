@@ -1,21 +1,33 @@
-from fastapi import FastAPI, Query
-from analyzer.film_scraper import scrape_film_data
-from analyzer.court_parser import parse_court_data
-from response_generator import generate_response
+from fastapi import FastAPI, UploadFile, File, Form
+from analyzer.film_scraper import scrape_and_summarize
+from analyzer.court_parser import parse_pdf_and_ask
+from utils import image_to_text, audio_to_text, ask_llm
 
 app = FastAPI()
 
 @app.get("/")
 def root():
-    return {"message": "TDS Data Analyst Agent is live!"}
+    return {"message": "TDS Data Analyst Agent API"}
 
-@app.get("/analyze")
-def analyze(source: str = Query(..., description="Choose source: 'film' or 'court'")):
-    if source == "film":
-        data = scrape_film_data()
-    elif source == "court":
-        data = parse_court_data()
-    else:
-        return {"error": "Invalid source"}
-    
-    return generate_response(data)
+@app.post("/scrape")
+def scrape(url: str = Form(...)):
+    return scrape_and_summarize(url)
+
+@app.post("/pdf")
+async def parse_pdf(file: UploadFile = File(...)):
+    content = await file.read()
+    return parse_pdf_and_ask(content)
+
+@app.post("/image")
+async def parse_image(file: UploadFile = File(...)):
+    content = await file.read()
+    return {"response": ask_llm(image_to_text(content))}
+
+@app.post("/audio")
+async def parse_audio(file: UploadFile = File(...)):
+    content = await file.read()
+    return {"response": ask_llm(audio_to_text(content))}
+
+@app.post("/ask")
+def ask(query: str = Form(...)):
+    return {"response": ask_llm(query)}
