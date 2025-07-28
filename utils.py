@@ -1,18 +1,12 @@
-import openai
-import pytesseract
 from PIL import Image
+import pytesseract
 import io
 import tempfile
 import whisper
-
-openai.api_key = "your-openai-api-key"
+from response_generator import generate_response
 
 def ask_llm(prompt: str) -> str:
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": prompt}]
-    )
-    return response.choices[0].message["content"]
+    return generate_response(prompt)
 
 def image_to_text(image_bytes: bytes) -> str:
     img = Image.open(io.BytesIO(image_bytes))
@@ -26,3 +20,4 @@ def audio_to_text(audio_bytes: bytes) -> str:
         result = model.transcribe(tmp.name)
         return result["text"]
 
+      
