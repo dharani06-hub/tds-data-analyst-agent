@@ -8,3 +8,4 @@ pytesseract
 Pillow
 python-multipart
 whisper
+openai==0.28
