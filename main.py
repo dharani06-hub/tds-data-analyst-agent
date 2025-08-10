@@ -1,85 +1,66 @@
-from fastapi import FastAPI, UploadFile, File
-from typing import List, Dict
+from fastapi import FastAPI, UploadFile, File, Form
 import pandas as pd
-import io
+from io import BytesIO
+from utils import image_to_text, audio_to_text, ask_llm
+from analyzer.film_scraper import scrape_and_summarize
+from analyzer.court_parser import parse_pdf_and_ask
 
-# Import task processors
-from processors.network import process_network_data
-from processors.sales import process_sales_data
-from processors.weather import process_weather_data
-from processors.scraper import scrape_and_summarize
-from processors.pdf_parser import parse_pdf_and_ask
-from processors.image_ocr import process_image_file
-from processors.audio_transcriber import process_audio_file
-
-# Fallback LLM handler
-from utils.llm import ask_llm
-
-app = FastAPI(
-    title="TDS Data Analyst Agent API",
-    description="Single endpoint to handle all TDS Data Analyst tasks.",
-    version="1.0.0"
-)
+app = FastAPI()
 
 @app.get("/")
 def root():
-    return {"message": "TDS Data Analyst Agent API is running"}
+    return {"message": "TDS Data Analyst Agent API"}
 
-@app.post("/api/", response_model=Dict)
-async def handle_request(
-    questions: UploadFile = File(..., description="Upload questions.txt"),
-    files: List[UploadFile] = File(default=[], description="Upload any supporting files (CSV, PDF, image, audio)")
-):
-    """
-    Accepts:
-    - questions.txt (always required)
-    - Zero or more supporting files
-    Returns:
-    - JSON array or JSON object, depending on the task
-    """
+# 1. Scrape Website
+@app.post("/scrape")
+def scrape(url: str = Form(...)):
+    return scrape_and_summarize(url)
 
-    # Read the questions
-    questions_text = (await questions.read()).decode().lower()
+# 2. PDF Parsing
+@app.post("/pdf")
+async def parse_pdf(file: UploadFile = File(...)):
+    content = await file.read()
+    return parse_pdf_and_ask(content)
 
-    # Helper to find file by extension
-    def get_file(*exts):
-        for f in files:
-            if f.filename.lower().endswith(exts):
-                return f
-        return None
+# 3. Image Processing
+@app.post("/image")
+async def parse_image(file: UploadFile = File(...)):
+    content = await file.read()
+    return {"response": ask_llm(image_to_text(content))}
 
-    # --- CSV-based tasks ---
-    csv_file = get_file(".csv")
-    if csv_file:
-        df = pd.read_csv(io.BytesIO(await csv_file.read()))
+# 4. Audio Processing
+@app.post("/audio")
+async def parse_audio(file: UploadFile = File(...)):
+    content = await file.read()
+    return {"response": ask_llm(audio_to_text(content))}
 
-        if "edge" in questions_text or "network" in questions_text:
-            return process_network_data(df)
+# 5. Generic LLM Query
+@app.post("/ask")
+def ask(query: str = Form(...)):
+    return {"response": ask_llm(query)}
 
-        elif "sales" in questions_text:
-            return process_sales_data(df)
+# ---- DATASET PROCESSING ----
 
-        elif "temperature" in questions_text or "precipitation" in questions_text or "weather" in questions_text:
-            return process_weather_data(df)
+def process_csv(file: UploadFile):
+    """Reads CSV file into pandas DataFrame and returns basic info."""
+    content = file.file.read()
+    df = pd.read_csv(BytesIO(content))
+    return {
+        "rows": len(df),
+        "columns": list(df.columns),
+        "head": df.head(5).to_dict(orient="records")
+    }
 
-    # --- Wikipedia scraping ---
-    if "wikipedia.org" in questions_text:
-        return scrape_and_summarize(questions_text)
+@app.post("/network")
+async def network_data(file: UploadFile = File(...)):
+    return process_csv(file)
 
-    # --- PDF parsing ---
-    pdf_file = get_file(".pdf")
-    if pdf_file:
-        return parse_pdf_and_ask(await pdf_file.read())
+@app.post("/sales")
+async def sales_data(file: UploadFile = File(...)):
+    return process_csv(file)
 
-    # --- Image OCR ---
-    image_file = get_file(".png", ".jpg", ".jpeg")
-    if image_file:
-        return process_image_file(await image_file.read())
+@app.post("/weather")
+async def weather_data(file: UploadFile = File(...)):
+    return process_csv(file)
 
-    # --- Audio transcription ---
-    audio_file = get_file(".mp3", ".wav")
-    if audio_file:
-        return process_audio_file(await audio_file.read())
-
-    # --- Fallback to LLM ---
-    return {"response": ask_llm(questions_text)}
+   
